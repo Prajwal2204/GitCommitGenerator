@@ -1,13 +1,13 @@
 import os
 import subprocess
-from transformers import pipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from dotenv import load_dotenv
-from huggingface_hub import login, HfApi
+from huggingface_hub import login
 
 class GitCommitGenerator:
     def __init__(self):
         """
-        Initialize the Git Commit Generator using Hugging Face model with authentication.
+        Initialize the Git Commit Generator using a reliable Hugging Face model.
         """
         # Load environment variables
         load_dotenv()
@@ -18,26 +18,27 @@ class GitCommitGenerator:
         # Authenticate with Hugging Face
         try:
             if hf_token:
-                # Login using token
                 login(token=hf_token)
                 print("Successfully authenticated with Hugging Face")
             else:
-                # Prompt for interactive login if no token is found
-                print("No Hugging Face token found. Attempting interactive login.")
-                login()
+                print("No Hugging Face token found. Using public models.")
         except Exception as e:
             print(f"Authentication error: {e}")
         
         # Load pre-trained model for text generation
         try:
-            self.generator = pipeline(
-                'text-generation', 
-                model='bigcode/speedcoder-small',  # Lightweight code generation model
-                use_auth_token=hf_token  # Pass token for model access
-            )
+            # Use a reliable, lightweight model
+            model_name = "microsoft/DialoGPT-small"
+            
+            # Load tokenizer and model
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.model = AutoModelForCausalLM.from_pretrained(model_name)
+            
+            print(f"Loaded model: {model_name}")
         except Exception as e:
             print(f"Model loading error: {e}")
-            self.generator = None
+            self.tokenizer = None
+            self.model = None
     
     def get_git_diff(self):
         """
@@ -54,29 +55,48 @@ class GitCommitGenerator:
     
     def generate_commit_message(self, diff):
         """
-        Generate commit message using Hugging Face model.
+        Generate commit message using the loaded model.
         """
-        if not diff or not self.generator:
+        if not diff or not self.model or not self.tokenizer:
             return "chore: update code changes"
         
         # Truncate diff to prevent excessive token usage
-        max_diff_length = 2000
+        max_diff_length = 1000
         truncated_diff = diff[:max_diff_length]
         
         try:
-            # Generate commit message
-            prompt = f"Generate a git commit message for these code changes:\n{truncated_diff}\n\nCommit message:"
-            messages = self.generator(
-                prompt, 
+            # Prepare the prompt
+            prompt = f"Generate a git commit message for these code changes:\n{truncated_diff}"
+            
+            # Encode the input
+            input_ids = self.tokenizer.encode(prompt, return_tensors='pt')
+            
+            # Generate response
+            output = self.model.generate(
+                input_ids, 
                 max_length=100, 
-                num_return_sequences=1
+                num_return_sequences=1,
+                no_repeat_ngram_size=2,
+                top_k=50,
+                top_p=0.95,
+                temperature=0.7
             )
             
-            # Extract and clean the generated message
-            commit_message = messages[0]['generated_text'].split('\n')[-1].strip()
+            # Decode the generated text
+            generated_text = self.tokenizer.decode(output[0], skip_special_tokens=True)
             
-            # Fallback if message is empty
-            return commit_message or "chore: update code changes"
+            # Extract commit message (try to clean it up)
+            commit_message = generated_text.split('\n')[-1].strip()
+            
+            # Fallback and sanitization
+            if not commit_message or len(commit_message) < 10:
+                return "chore: update code changes"
+            
+            # Ensure it follows conventional commit format
+            if not commit_message.split(':')[0] in ['feat', 'fix', 'docs', 'style', 'refactor', 'test', 'chore']:
+                commit_message = f"chore: {commit_message}"
+            
+            return commit_message
         
         except Exception as e:
             print(f"Commit message generation error: {e}")
