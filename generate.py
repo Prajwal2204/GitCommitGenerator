@@ -7,15 +7,15 @@ from dotenv import load_dotenv
 class GitCommitGenerator:
     def __init__(self):
         """
-        Initialize the Git Commit Generator using a reliable Hugging Face model.
+        Initialize the Git Commit Generator using the Mistral 7B Instruct model.
         """
         # Load environment variables
         load_dotenv()
         
         # Load pre-trained model for text generation
         try:
-            # Use a reliable model
-            model_name = "gpt2"
+            # Use Mistral 7B Instruct model
+            model_name = "mistralai/Mistral-7B-Instruct-v0.2"
             
             # Load tokenizer and model
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -25,7 +25,11 @@ class GitCommitGenerator:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
             
             # Load model
-            self.model = AutoModelForCausalLM.from_pretrained(model_name)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name, 
+                torch_dtype=torch.float16,  # Use half precision for memory efficiency
+                device_map="auto"  # Automatically distribute model across available GPUs
+            )
             
             print(f"Loaded model: {model_name}")
         except Exception as e:
@@ -48,7 +52,7 @@ class GitCommitGenerator:
     
     def generate_commit_message(self, diff):
         """
-        Generate commit message using the loaded model.
+        Generate commit message using the loaded Mistral model.
         """
         if not diff or not self.model or not self.tokenizer:
             return "chore: update code changes"
@@ -58,8 +62,19 @@ class GitCommitGenerator:
         truncated_diff = diff[:max_diff_length]
         
         try:
-            # Prepare the prompt
-            prompt = f"Generate a git commit message for these code changes:\n{truncated_diff}\n\nCommit message:"
+            # Prepare the prompt with explicit instructions for Mistral
+            prompt = f"""You are an expert at generating concise and meaningful git commit messages.
+Given the following code changes, generate a precise commit message that follows conventional commit guidelines:
+
+Code Changes:
+{truncated_diff}
+
+Generate a commit message that:
+1. Starts with a conventional commit prefix (feat, fix, docs, style, refactor, test, chore)
+2. Is under 72 characters
+3. Clearly describes the changes made
+
+Commit Message:"""
             
             # Encode the input with explicit padding and attention mask
             inputs = self.tokenizer(
