@@ -6,4 +6,8 @@ print("Hello world")
 def area(length, breadth):
     return length * breadth
 
-print("Area of square is:", area(a,b))
+def main():
+    print("Area of square is:", area(a,b))
+    
+if __name__ == "__main__":
+    main()
