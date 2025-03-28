@@ -59,7 +59,18 @@ class GitCommitGenerator:
         
         try:
             # Prepare the prompt
-            prompt = f"Generate a git commit message for these code changes:\n{truncated_diff}\n\nCommit message:"
+            prompt = f"""You are an expert at generating concise and meaningful git commit messages.
+Given the following code changes, generate a precise commit message that follows conventional commit guidelines:
+
+Code Changes:
+{truncated_diff}
+
+Generate a commit message that:
+1. Starts with a conventional commit prefix (feat, fix, docs, style, refactor, test, chore)
+2. Is under 72 characters
+3. Clearly describes the changes made
+
+Commit Message:"""
             
             # Encode the input with explicit padding and attention mask
             inputs = self.tokenizer(
