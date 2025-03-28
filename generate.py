@@ -67,7 +67,7 @@ Code Changes:
 
 Generate a commit message that:
 1. Starts with a conventional commit prefix (feat, fix, docs, style, refactor, test, chore)
-2. Is under 72 characters
+2. Is under 50 characters
 3. Clearly describes the changes made
 
 Commit Message:"""
