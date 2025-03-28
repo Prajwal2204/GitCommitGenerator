@@ -1,8 +1,8 @@
 import os
 import subprocess
+import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from dotenv import load_dotenv
-from huggingface_hub import login
 
 class GitCommitGenerator:
     def __init__(self):
@@ -12,26 +12,19 @@ class GitCommitGenerator:
         # Load environment variables
         load_dotenv()
         
-        # Retrieve Hugging Face token from environment variable
-        hf_token = os.getenv('HUGGINGFACE_TOKEN')
-        
-        # Authenticate with Hugging Face
-        try:
-            if hf_token:
-                login(token=hf_token)
-                print("Successfully authenticated with Hugging Face")
-            else:
-                print("No Hugging Face token found. Using public models.")
-        except Exception as e:
-            print(f"Authentication error: {e}")
-        
         # Load pre-trained model for text generation
         try:
-            # Use a reliable, lightweight model
-            model_name = "microsoft/DialoGPT-small"
+            # Use a reliable model
+            model_name = "gpt2"
             
             # Load tokenizer and model
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            
+            # Set pad token if not already set
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            
+            # Load model
             self.model = AutoModelForCausalLM.from_pretrained(model_name)
             
             print(f"Loaded model: {model_name}")
@@ -66,41 +59,69 @@ class GitCommitGenerator:
         
         try:
             # Prepare the prompt
-            prompt = f"Generate a git commit message for these code changes:\n{truncated_diff}"
+            prompt = f"Generate a git commit message for these code changes:\n{truncated_diff}\n\nCommit message:"
             
-            # Encode the input
-            input_ids = self.tokenizer.encode(prompt, return_tensors='pt')
+            # Encode the input with explicit padding and attention mask
+            inputs = self.tokenizer(
+                prompt, 
+                return_tensors='pt', 
+                padding=True, 
+                truncation=True, 
+                max_length=512
+            )
             
-            # Generate response
+            # Generate response with sampling enabled
+            generation_params = {
+                'max_length': inputs['input_ids'].shape[1] + 50,  # Extend beyond input length
+                'num_return_sequences': 1,
+                'do_sample': True,  # Enable sampling
+                'temperature': 0.7,  # Creative temperature
+                'top_k': 50,  # Top-k sampling
+                'top_p': 0.95,  # Nucleus sampling
+                'no_repeat_ngram_size': 2,  # Prevent repetition
+            }
+            
+            # Generate output
             output = self.model.generate(
-                input_ids, 
-                max_length=100, 
-                num_return_sequences=1,
-                no_repeat_ngram_size=2,
-                top_k=50,
-                top_p=0.95,
-                temperature=0.7
+                input_ids=inputs['input_ids'],
+                attention_mask=inputs['attention_mask'],
+                **generation_params
             )
             
             # Decode the generated text
             generated_text = self.tokenizer.decode(output[0], skip_special_tokens=True)
             
-            # Extract commit message (try to clean it up)
-            commit_message = generated_text.split('\n')[-1].strip()
-            
-            # Fallback and sanitization
-            if not commit_message or len(commit_message) < 10:
-                return "chore: update code changes"
-            
-            # Ensure it follows conventional commit format
-            if not commit_message.split(':')[0] in ['feat', 'fix', 'docs', 'style', 'refactor', 'test', 'chore']:
-                commit_message = f"chore: {commit_message}"
+            # Extract and clean commit message
+            commit_message = self._clean_commit_message(generated_text, prompt)
             
             return commit_message
         
         except Exception as e:
             print(f"Commit message generation error: {e}")
             return "chore: update code changes"
+    
+    def _clean_commit_message(self, generated_text, prompt):
+        """
+        Clean and format the generated commit message.
+        
+        :param generated_text: Full generated text
+        :param prompt: Original prompt
+        :return: Cleaned commit message
+        """
+        # Remove the prompt from the generated text
+        cleaned_text = generated_text.replace(prompt, '').strip()
+        
+        # Split into lines and take the first meaningful line
+        lines = [line.strip() for line in cleaned_text.split('\n') if line.strip()]
+        commit_message = lines[0] if lines else "chore: update code changes"
+        
+        # Ensure conventional commit format
+        conventional_prefixes = ['feat', 'fix', 'docs', 'style', 'refactor', 'test', 'chore']
+        if not any(commit_message.startswith(prefix) for prefix in conventional_prefixes):
+            commit_message = f"chore: {commit_message}"
+        
+        # Limit message length
+        return commit_message[:72]
     
     def auto_commit(self):
         """
