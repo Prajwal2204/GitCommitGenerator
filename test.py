@@ -3,12 +3,12 @@ b = 4
 print(a+b)
 print("Hello world")
 
-def area(length, breadth):
+def areaOfRectangle(length, breadth):
     return length * breadth
 
 def main():
     print("Inside main function")
-    print("Area of rectangle is:", area(a,b))
+    print("Area of rectangle is:", areaOfRectangle(a,b))
 
 if __name__ == "__main__":
     main()
